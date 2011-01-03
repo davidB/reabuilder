@@ -1,6 +1,7 @@
 package net_alchim31_reabuilder
 package cli
 
+import net_alchim31_reabuilder.cli.BuildersChainFSWatcher
 import net_alchim31_reabuilder.impl0.RunMonitor0
 import java.io.File
 import net_alchim31_reabuilder.impl0.BuildersChainRunner

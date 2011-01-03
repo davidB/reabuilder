@@ -1,6 +1,7 @@
 package net_alchim31_reabuilder
 package helpers
 
+import net_alchim31_reabuilder.helpers.FileSystemChangesHelper
 import net_alchim31_reabuilder.api.{FileSystemChanges, FilePath}
 import net_alchim31_reabuilder.impl0.{FilePath0, FileSystemChanges0, FileSystemChangesEmpty}
 
