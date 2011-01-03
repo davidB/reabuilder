@@ -1,0 +1,20 @@
+<project xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd" xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<modelVersion>4.0.0</modelVersion>
+	<groupId>net.contentobjects</groupId>
+	<artifactId>jnotify</artifactId>
+	<name>JNotify</name>
+	<version>0.93</version>
+	<description>JNotify is a java library that allow java application to listen to file system events.</description>
+	<url>http://jnotify.sourceforge.net/</url>
+  <licenses>
+    <license>
+      <name>GNU Library or "Lesser" General Public License version 2.1 (LGPLv2.1)</name>
+      <url>http://www.opensource.org/licenses/lgpl-2.1.php</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>  
+	<issueManagement>
+	  <system>sourceforge</system>
+      <url>http://sourceforge.net/tracker/?group_id=154048</url>
+	</issueManagement>
+</project>

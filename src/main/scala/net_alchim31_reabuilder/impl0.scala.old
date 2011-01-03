@@ -1,0 +1,170 @@
+package net_alchim31_reabuilder
+package impl0
+
+import net_alchim31_utils.MiniLogger
+import net_alchim31_reabuilder.api._
+import scala.actors.Reactor
+
+object BuildersChainRunner {
+  sealed trait Event
+  case class SrcChange(details : FileSystemChanges) extends Event
+
+  // private internal events
+  private[impl0] case class NewRun(runId : String, changes : FileSystemChanges) extends Event
+  private[impl0] case class RunBuilder(builder : Builder, changes : FileSystemChanges, previousMonitor : RunMonitor, tailChain : List[Builder]) extends Event
+  private[impl0] case class Done(lastMonitor : RunMonitor) extends Event
+}
+
+class BuildersChainRunner(val buildersChain : BuildersChain, val untilLabel : Option[String] = None) extends Reactor[BuildersChainRunner.Event] {
+  import BuildersChainRunner._
+  import net_alchim31_reabuilder.helpers.FileSystemChangesHelper
+  
+  //TODO check untilLabel exists into chain
+
+  private var _runCnt = 0
+  private var _lastRunId : String = ""
+  private var _lastSrcChanges : FileSystemChanges = FileSystemChangesEmpty
+
+  def act() = loop {
+    react {
+      case Done(lastMonitor) => {
+        if (lastMonitor.runId == _lastRunId) {
+          lastMonitor.info("DONE")
+          _lastSrcChanges = FileSystemChangesEmpty
+        }
+      }
+      case SrcChange(changes) => {
+        // if there is a currently running chain, changing the _lastRunId => stop of the run, and the new run will redo work of aborted run
+        _lastSrcChanges = FileSystemChangesHelper.merge(_lastSrcChanges, changes)
+        _runCnt += 1
+        _lastRunId = buildersChain.label + "-" + _runCnt
+        // send an event after updated _lastRunId, then waiting request for previous/other runId will be consumed
+        this ! NewRun(_lastRunId, _lastSrcChanges)
+      }
+      case x : NewRun => {
+        if (x.runId != _lastRunId) {
+          //TODO log info("aborted, newer run started")
+        } else {
+          this ! run(x)
+        }
+      }
+      case x : RunBuilder => {
+        if (x.previousMonitor.runId != _lastRunId) {
+          x.previousMonitor.info("aborted, newer run started")
+        } else {
+          // acquire change source+output since last builder run
+          this ! runBuilder(x)
+        }
+      }
+      case x => println("ignore " + x) //TODO use regular logger
+    }
+  }
+  
+  protected def runBuilder(args : RunBuilder) : Event = {
+    import args._
+    
+    val buildMonitor = previousMonitor.begin(builder)
+    val buildChangesOut : FileSystemChanges = try {
+      val buildChangesIn = FileSystemChangesHelper.filterForAccept(changes, builder.pathAcceptor)
+      buildChangesIn.isEmpty match {
+        case true =>  {
+          buildMonitor.info("skipped : no change")
+          FileSystemChangesEmpty
+        }
+        case false => builder.build(buildChangesIn, buildMonitor)
+      }
+
+    } catch {
+      case t => {
+        buildMonitor.error(Some(t), "unhandled exception raised by builder")
+        FileSystemChangesEmpty
+      }
+    } finally {
+      buildMonitor.end(builder)
+    }
+    if (buildMonitor.hasError) {
+      buildMonitor.info("stop due to errror(s)")
+      Done(buildMonitor)
+    } else if (untilLabel.map( _ == builder.label).getOrElse(false)) {
+      buildMonitor.info("stop at requested builder : "+ builder.label)
+      Done(buildMonitor)
+    } else {
+      tailChain match {
+        case Nil => Done(buildMonitor)
+        case nextBuilder :: nextTailChain => {
+          val buildChanges = FileSystemChangesHelper.merge(changes, buildChangesOut)
+          RunBuilder(nextBuilder, buildChanges, buildMonitor, nextTailChain)
+        }
+      }
+    }
+  }
+  
+  protected def run(args : NewRun) : Event = {
+    import args._
+    buildersChain.chain match {
+      case Nil => {
+        val monitor = new RunMonitor0(runId, None, Nil)
+        monitor.warn(None, "empty builders chain")
+        Done(monitor)
+      }
+      case nextBuilder :: nextTailChain => {
+        val monitor = new RunMonitor0(runId, Some(nextBuilder), Nil)
+        RunBuilder(nextBuilder, changes, monitor, nextTailChain)
+      }
+    }
+  }
+  
+}
+
+class RunMonitor0(val runId : String, builder : Option[Builder] = None, val previousBuilders : List[Builder] = Nil) extends RunMonitor {
+  private lazy val _logger = new MiniLogger(taskName + "." + runId)
+
+  private var _errorCounter = 0
+
+  def taskName : String = builder.map(_.label).getOrElse("x")
+  
+  // logging
+  def info(msg : String) = _logger.info(msg)
+  def warn(t : Option[Throwable] = None, msg : String) = _logger.warn(t, msg)
+  def error(t : Option[Throwable] = None, msg : String) = {
+    _errorCounter +=1
+    _logger.error(t, msg)
+  }
+  
+  def hasError : Boolean = _errorCounter > 0
+  
+  // progression
+  /**
+   * !Do Nothing
+   * {@inherited}
+   */
+  def worked(work : Int = 1, total : Int = 1) : RunMonitor = this
+  
+  def begin(v : Builder) : RunMonitor = {
+    val b = new RunMonitor0(runId, Some(v), builder.map(_ :: previousBuilders).getOrElse(previousBuilders))
+    b.info("begin")
+    b
+  }
+  
+  def end(b : Builder) : RunMonitor = {
+    this.info("end with " + _errorCounter + " error(s)")
+    this
+  }
+}
+
+object FileSystemChangesEmpty extends FileSystemChanges {
+  def modifiedOrCreated = Seq.empty[FilePath]
+  def deleted =  Seq.empty[FilePath]
+  def renamed = Seq.empty[(FilePath,FilePath)]
+}
+
+class FileSystemChanges0(
+  val modifiedOrCreated : Seq[FilePath] = Nil,
+  val deleted : Seq[FilePath] = Nil,
+  val renamed : Seq[(FilePath,FilePath)] = Nil
+) extends FileSystemChanges
+
+class FilePath0(path : String, val root : Option[FilePath] = None) extends FilePath {
+  def this(path : String, r : FilePath) = this(path, Some(r))
+  lazy val rpath : String = path.replace('\\', '/')
+}
